@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+<title>Guts and Glory</title>
+<link rel="shortcut icon" href="TemplateData/favicon.ico">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #8fcf5a; font-family: "Arial Black", "Impact", Arial, sans-serif; }
+  #game { position: fixed; inset: 0; }
+  #canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(#8fcf5a 0 62%, #f4f4f0 62% 100%); text-align: center; }
+  #title { font-size: min(11vw, 96px); line-height: .95; color: #111; letter-spacing: .02em; text-transform: uppercase; }
+  #title b { color: #f2c200; -webkit-text-stroke: 3px #111; }
+  #sub { margin-top: 14px; font-size: min(3.6vw, 20px); color: #111; font-family: Arial, sans-serif; font-weight: 700; }
+  #bar { margin-top: 28px; width: min(70vw, 420px); height: 18px; border: 3px solid #111; border-radius: 10px; background: #fff; overflow: hidden; }
+  #fill { height: 100%; width: 0; background: #f2c200; }
+  #status { margin-top: 10px; font: 700 14px Arial, sans-serif; color: #222; }
+  #ported { margin-top: 22px; font: 16px "Comic Sans MS", "Comic Sans", cursive; color: #111; }
+  #ported a { color: #111; }
+  #hint { margin-top: 8px; font: 13px Arial, sans-serif; color: #333; max-width: 80vw; }
+  #warn { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: none; }
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="canvas" tabindex="-1"></canvas>
+  <div id="loading">
+    <div id="title">Guts <b>and</b><br>Glory</div>
+    <div id="sub">every level, in your browser</div>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="status">starting...</div>
+    <div id="ported">ported by down1oads &middot; <a href="https://slyr.pages.dev" target="_blank" rel="noopener">slyr.pages.dev</a></div>
+    <div id="hint">Play &rarr; Official Tracks &rarr; pick a chapter and a level. Arrow keys drive and steer, W/S/A/D lean, Space handbrake, Shift boost, V respawn at checkpoint, N restart level. Each level downloads when you pick it.</div>
+  </div>
+  <div id="warn"></div>
+</div>
+<script src="Build/build_web.loader.js"></script>
+<script>
+  var canvas = document.getElementById("canvas"), fill = document.getElementById("fill"), statusEl = document.getElementById("status");
+  var PARTS = 2, TOTAL = 158893289;
+
+  function banner(msg, type) {
+    var w = document.getElementById("warn"); var d = document.createElement("div"); d.innerHTML = msg;
+    d.style = "padding:10px;font:14px Arial;background:" + (type == "error" ? "red" : "yellow"); w.appendChild(d); w.style.display = "block";
+    if (type != "error") setTimeout(function () { w.removeChild(d); if (!w.children.length) w.style.display = "none"; }, 5000);
+  }
+
+  // the host limits files to 100 MB, so the data file is stored in parts: download them and join them in memory
+  async function loadData() {
+    var chunks = [], got = 0;
+    for (var i = 0; i < PARTS; i++) {
+      var r = await fetch("Build/game.data." + i);
+      if (!r.ok) throw new Error("download failed: part " + i);
+      var reader = r.body.getReader();
+      for (;;) {
+        var s = await reader.read();
+        if (s.done) break;
+        chunks.push(s.value); got += s.value.length;
+        fill.style.width = (60 * got / TOTAL) + "%";
+        statusEl.textContent = "downloading " + Math.round(got / 1048576) + " / " + Math.round(TOTAL / 1048576) + " MB";
+      }
+    }
+    return URL.createObjectURL(new Blob(chunks));
+  }
+
+  var wantFullscreen = true;
+  function goFullscreen() {
+    if (!wantFullscreen) return; wantFullscreen = false;
+    try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(function () {}); } catch (e) {}
+  }
+  window.addEventListener("pointerdown", function (e) { if (e.target && e.target.closest && e.target.closest("#ported")) return; goFullscreen(); }, true);
+  window.addEventListener("keydown", goFullscreen, { once: true, capture: true });
+  document.addEventListener("fullscreenchange", function () { [60, 250, 700, 1500].forEach(function (ms) { setTimeout(function () { window.dispatchEvent(new Event("resize")); }, ms); }); });
+  function nudgeCanvas() { canvas.style.width = "calc(100% - 2px)"; setTimeout(function () { canvas.style.width = ""; window.dispatchEvent(new Event("resize")); }, 90); }
+  function nudgeSoon() { [0, 150, 600, 1500].forEach(function (ms) { setTimeout(nudgeCanvas, ms); }); }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") nudgeSoon(); });
+  window.addEventListener("focus", nudgeSoon); window.addEventListener("pageshow", nudgeSoon);
+
+  (async function () {
+    try {
+      var dataUrl = await loadData();
+      statusEl.textContent = "unpacking...";
+      var inst = await createUnityInstance(canvas, {
+        arguments: [], dataUrl: dataUrl,
+        frameworkUrl: "Build/build_web.framework.js.unityweb", codeUrl: "Build/build_web.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets", companyName: "Down1oads", productName: "Guts and Glory", productVersion: "0.1",
+        devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2), showBanner: banner
+      }, function (p) { fill.style.width = (60 + 40 * p) + "%"; });
+      window.unityInstance = inst;
+      document.getElementById("loading").style.display = "none";
+      canvas.focus();
+    } catch (e) { statusEl.textContent = "failed: " + e; banner(String(e), "error"); }
+  })();
+</script>
+</body>
+</html>
